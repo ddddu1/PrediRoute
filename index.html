@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PrediRoute — Proactive Congestion Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-base: #0d1117; --bg-surface: #131920; --bg-panel: #161e2a;
+      --bg-card: #1a2235; --bg-hover: #1e2a3d; --border: #1f2d42;
+      --border-light: #243347; --blue-500: #3b82f6; --blue-400: #60a5fa;
+      --green-500: #22c55e; --green-400: #4ade80; --green-glow: rgba(34,197,94,0.15);
+      --orange-500: #f97316; --amber-400: #fbbf24; --red-500: #ef4444;
+      --red-400: #f87171; --purple-400: #a78bfa; --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8; --text-muted: #4b6280;
+      --font-ui: 'Inter', system-ui, sans-serif; --font-mono: 'JetBrains Mono', monospace;
+      --radius-md: 8px;
+    }
+    html, body { min-height: 100vh; background: var(--bg-base); color: var(--text-primary); font-family: var(--font-ui); font-size: 13px; line-height: 1.5; overflow-x: hidden; }
+    .topbar { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--bg-panel); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+    .topbar-brand { display: flex; align-items: center; gap: 10px; min-width: 200px; }
+    .brand-text { display: flex; flex-direction: column; }
+    .brand-name { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+    .brand-sub { font-size: 10px; color: var(--text-muted); }
+    .topbar-center { flex: 1; text-align: center; }
+    .console-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .topbar-right { display: flex; align-items: center; gap: 16px; min-width: 200px; justify-content: flex-end; }
+    .sys-status { display: flex; align-items: center; gap: 8px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .status-dot.green { background: var(--green-500); }
+    .status-dot.pulse { animation: pulse-dot 2s infinite; }
+    @keyframes pulse-dot { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.5); } 50% { opacity: 0.8; box-shadow: 0 0 0 4px rgba(34,197,94,0); } }
+    .status-label { font-size: 9px; color: var(--text-muted); letter-spacing: 0.8px; font-weight: 600; }
+    .status-val.green { color: var(--green-500); font-weight: 700; font-size: 11px; }
+    .sys-meta { display: flex; flex-direction: column; align-items: flex-end; }
+    .live-clock { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--text-primary); }
+    .live-date { font-size: 10px; color: var(--text-muted); }
+    .control-bar { display: flex; align-items: center; gap: 20px; padding: 10px 20px; background: var(--bg-surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .control-group { display: flex; flex-direction: column; gap: 4px; }
+    .ctrl-label { font-size: 9px; font-weight: 700; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; }
+    .district-select { appearance: none; background: var(--bg-card); border: 1px solid var(--border-light); color: var(--text-primary); font-family: var(--font-ui); font-size: 12px; font-weight: 500; padding: 6px 28px 6px 10px; border-radius: var(--radius-md); cursor: pointer; outline: none; }
+    .district-select:hover { border-color: var(--blue-500); }
+    .select-wrapper { position: relative; display: inline-flex; align-items: center; }
+    .select-arrow { position: absolute; right: 8px; color: var(--text-muted); pointer-events: none; }
+    .ml-auto { margin-left: auto; }
+    .inject-btn { display: flex; align-items: center; gap: 6px; background: rgba(239,68,68,0.1); border: 1px solid var(--red-500); color: var(--red-400); font-family: var(--font-ui); font-size: 12px; font-weight: 600; padding: 7px 14px; border-radius: var(--radius-md); cursor: pointer; }
+    .inject-btn:hover { background: rgba(239,68,68,0.2); }
+    .main-grid { display: grid; grid-template-columns: 380px 1fr 340px; gap: 0; min-height: calc(100vh - 120px); align-items: start; }
+    .left-col, .center-col, .right-col { display: flex; flex-direction: column; gap: 0; border-right: 1px solid var(--border); height: 100%; }
+    .right-col { border-right: none; }
+    .panel { background: var(--bg-panel); border-bottom: 1px solid var(--border); padding: 14px 16px; }
+    .panel-header { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 12px; text-transform: uppercase; }
+    .map-panel { padding: 14px; flex: 0 0 auto; }
+    .map-container { position: relative; background: #1a2035; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); height: 340px; max-height: 340px; min-height: 200px; }
+    #traffic-map { width: 100%; height: 100%; min-height: 300px; background: #1a2035; }
+    .map-legend { position: absolute; top: 10px; left: 10px; background: rgba(13,17,23,0.88); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; z-index: 10; backdrop-filter: blur(4px); min-width: 155px; }
+    .legend-title { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; }
+    .legend-item { display: flex; align-items: center; gap: 7px; font-size: 10px; color: var(--text-secondary); margin-bottom: 4px; }
+    .leg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .leg-dot.green { background: var(--green-500); }
+    .leg-dot.orange { background: var(--orange-500); }
+    .leg-dot.red { background: var(--red-500); }
+    .leg-circle { width: 10px; height: 10px; border-radius: 50%; border: 2px solid white; flex-shrink: 0; }
+    .leg-line { width: 16px; height: 3px; background: var(--text-secondary); border-radius: 2px; flex-shrink: 0; }
+    .legend-divider { border-top: 1px solid var(--border); margin: 6px 0; }
+    #traffic-map .leaflet-control-zoom { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+    #traffic-map .leaflet-control-zoom a { background: var(--bg-card); color: var(--text-primary); border-color: var(--border); }
+    #traffic-map .leaflet-control-zoom a:hover { background: var(--bg-hover); }
+    #traffic-map .leaflet-popup-content-wrapper { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-md); }
+    #traffic-map .leaflet-popup-tip { background: var(--bg-card); border: 1px solid var(--border); }
+    .traffic-dot { animation: traffic-flow 1.5s ease-in-out infinite; }
+    @keyframes traffic-flow { 0%, 100% { opacity: 0.3; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-4px); } }
+    .incident-marker { animation: pulse-incident 1.2s infinite; }
+    @keyframes pulse-incident { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239,68,68,0.6); } 70% { transform: scale(1.3); box-shadow: 0 0 0 20px rgba(239,68,68,0); } 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239,68,68,0); } }
+    .incident-radius { animation: pulse-radius 2s ease-in-out infinite; }
+    @keyframes pulse-radius { 0%, 100% { opacity: 0.1; } 50% { opacity: 0.3; } }
+    .district-label { pointer-events: none; }
+    .dash-footer { display: flex; align-items: center; gap: 20px; padding: 8px 20px; background: var(--bg-panel); border-top: 1px solid var(--border); font-size: 10px; color: var(--text-muted); flex-wrap: wrap; }
+    .footer-conn { display: flex; align-items: center; gap: 5px; margin-left: auto; color: var(--green-500); font-weight: 600; }
+    .forecast-panel { flex: 1; min-height: 200px; overflow-y: auto; }
+    .ft-head { display: grid; grid-template-columns: 1fr 80px 85px 60px 85px; gap: 4px; font-size: 9px; font-weight: 700; color: var(--text-muted); padding: 4px 6px; border-bottom: 1px solid var(--border); }
+    .forecast-row { display: grid; grid-template-columns: 1fr 80px 85px 60px 85px; gap: 4px; align-items: center; padding: 5px 6px; border-radius: 4px; }
+    .forecast-row:hover { background: var(--bg-hover); }
+    .fr-name { font-weight: 600; font-size: 12px; color: var(--text-primary); }
+    .fr-status { display: inline-flex; align-items: center; justify-content: center; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+    .fr-status.clear { background: var(--green-glow); color: var(--green-500); border: 1px solid rgba(34,197,94,0.3); }
+    .fr-status.jam { background: var(--red-glow); color: var(--red-400); border: 1px solid rgba(239,68,68,0.3); }
+    .fr-status.slow { background: var(--amber-glow); color: var(--amber-400); border: 1px solid rgba(251,191,36,0.3); }
+    .fr-status.normal { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
+    .fr-pred { font-family: var(--font-mono); font-size: 13px; font-weight: 700; text-align: center; }
+    .fr-pred.low-cong { color: var(--green-500); }
+    .fr-pred.mid-cong { color: var(--orange-500); }
+    .fr-pred.high-cong { color: var(--red-500); }
+    .fr-pred.normal-cong { color: var(--green-500); }
+    .fr-risk { display: inline-flex; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+    .fr-risk.low { color: var(--green-500); background: var(--green-glow); }
+    .fr-risk.high { color: var(--amber-400); background: var(--amber-glow); }
+    .fr-risk.critical { color: var(--red-400); background: var(--red-glow); }
+    .fr-risk.normal { color: var(--text-muted); background: var(--bg-card); }
+    .fr-action { display: inline-flex; font-size: 10px; font-weight: 700; padding: 4px 8px; border-radius: 4px; border: none; cursor: pointer; }
+    .fr-action.maintain { background: var(--green-glow); color: var(--green-500); border: 1px solid rgba(34,197,94,0.4); }
+    .fr-action.reroute { background: var(--red-500); color: white; }
+    .fr-action.prepare-reroute { background: var(--amber-400); color: #1a1a1a; }
+    .fr-action.monitor { background: var(--bg-card); color: var(--blue-400); border: 1px solid var(--blue-500); }
+    .panel-footer-note { font-size: 10px; color: var(--text-muted); margin-top: 10px; font-style: italic; }
+    .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .kpi-card { display: flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; }
+    .kpi-info { display: flex; flex-direction: column; gap: 2px; }
+    .kpi-label { font-size: 9px; color: var(--text-muted); font-weight: 600; }
+    .kpi-val { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--text-primary); }
+    .kpi-val.amber { color: var(--amber-400); }
+    .kpi-val.green { color: var(--green-500); }
+    .kpi-val.purple { color: var(--purple-400); }
+    .kpi-val small { font-size: 10px; font-weight: 400; color: var(--text-muted); }
+    .dispatcher-btns { display: flex; gap: 10px; }
+    .btn-approve, .btn-reject { display: flex; align-items: center; gap: 6px; flex: 1; justify-content: center; padding: 10px; border-radius: var(--radius-md); font-family: var(--font-ui); font-size: 12px; font-weight: 700; border: none; cursor: pointer; }
+    .btn-approve { background: var(--green-500); color: white; }
+    .btn-reject { background: rgba(239,68,68,0.15); color: var(--red-400); border: 1px solid var(--red-500); }
+    .dispatcher-note { font-size: 10px; color: var(--text-muted); margin-top: 8px; text-align: center; font-style: italic; }
+    .route-comparison { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .route-card { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; }
+    .route-card.current { border-color: rgba(239,68,68,0.4); }
+    .route-card.recommended { border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.04); }
+    .rc-label { font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+    .rc-name { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+    .rc-name.green { color: var(--green-500); }
+    .rc-eta { font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: var(--text-primary); }
+    .rc-eta.green { color: var(--green-500); }
+    .rc-cong { font-family: var(--font-mono); font-size: 14px; font-weight: 700; }
+    .rc-cong.red { color: var(--red-500); }
+    .rc-cong.green { color: var(--green-500); }
+    .vs-badge { width: 30px; height: 30px; border-radius: 50%; background: var(--bg-card); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 800; color: var(--text-muted); flex-shrink: 0; }
+    .router-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .rm-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+    .rm-label { font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+    .rm-val { font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: var(--text-primary); }
+    .rm-val.green { color: var(--green-500); }
+    .justification-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; }
+    .just-label { font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; }
+    .just-text { font-size: 11px; color: var(--text-secondary); line-height: 1.6; }
+    .alerts-panel { flex: 1; }
+    .alert-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 8px; border-radius: 4px; cursor: pointer; }
+    .alert-row:hover { background: var(--bg-hover); }
+    .alert-time { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+    .alert-tag { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; }
+    .alert-tag.accident { background: var(--red-glow); color: var(--red-400); border: 1px solid rgba(239,68,68,0.3); }
+    .alert-tag.jam { background: var(--amber-glow); color: var(--amber-400); border: 1px solid rgba(251,191,36,0.3); }
+    .alert-tag.clear { background: var(--green-glow); color: var(--green-500); border: 1px solid rgba(34,197,94,0.3); }
+    .alert-title { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+    .alert-sub { font-size: 10px; color: var(--text-muted); }
+    .view-all-btn { display: flex; align-items: center; justify-content: flex-end; gap: 4px; width: 100%; margin-top: 8px; background: none; border: none; color: var(--blue-400); font-family: var(--font-ui); font-size: 11px; font-weight: 600; cursor: pointer; }
+    .calibration-panel { flex: 0 0 auto; min-height: 160px; max-height: 200px; overflow-y: auto; }
+    .calib-body { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; flex-wrap: wrap; }
+    .calib-status-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(34,197,94,0.12); border: 1px solid var(--green-500); color: var(--green-500); font-size: 10px; font-weight: 700; padding: 5px 10px; border-radius: var(--radius-md); }
+    .calib-warn { display: flex; align-items: flex-start; gap: 6px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 6px 10px; font-size: 10px; color: var(--text-secondary); flex: 1; }
+    .coeff-table-wrap { overflow-x: auto; border-radius: var(--radius-md); border: 1px solid var(--border); }
+    .coeff-table { border-collapse: collapse; width: 100%; font-family: var(--font-mono); font-size: 10px; }
+    .coeff-table th, .coeff-table td { padding: 5px 8px; text-align: center; border-right: 1px solid var(--border); white-space: nowrap; color: var(--text-secondary); }
+    .coeff-table thead tr { background: var(--bg-card); color: var(--text-muted); font-size: 9px; font-weight: 600; }
+    .coeff-table tbody tr { background: var(--bg-surface); }
+    .coeff-table .active-hour { background: rgba(59,130,246,0.15); color: var(--blue-400); font-weight: 700; border: none; box-shadow: inset 0 0 0 1px var(--blue-500); }
+    .coeff-note { font-size: 9px; color: var(--text-muted); margin-top: 6px; font-style: italic; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════ TOP BAR ══ -->
+<header class="topbar">
+  <div class="topbar-brand">
+    <div class="logo-mark">
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="8" fill="#2563EB"/>
+        <path d="M6 22 L12 10 L18 17 L22 12 L28 22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <circle cx="22" cy="12" r="2.5" fill="#60A5FA"/>
+      </svg>
+    </div>
+    <div class="brand-text">
+      <span class="brand-name">PrediRoute</span>
+      <span class="brand-sub">Proactive Congestion Management</span>
+    </div>
+  </div>
+  <div class="topbar-center">
+    <h1 class="console-title">Proactive Congestion Management &amp; Intelligent Routing Console</h1>
+  </div>
+  <div class="topbar-right">
+    <div class="sys-status">
+      <span class="status-dot green pulse"></span>
+      <div class="status-text">
+        <span class="status-label">SYSTEM STATUS</span>
+        <span class="status-val green">OPERATIONAL</span>
+      </div>
+    </div>
+    <div class="sys-meta">
+      <span id="live-clock" class="live-clock">--:-- --</span>
+      <span class="live-date" id="live-date">--- --, ----</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════ CONTROL BAR ══ -->
+<div class="control-bar">
+  <div class="control-group">
+    <label class="ctrl-label">SELECTED DISTRICT</label>
+    <div class="select-wrapper">
+      <select id="district-select" class="district-select">
+        <option value="4">District 4 (San Francisco - Calibrated)</option>
+        <option value="7">District 7 (Los Angeles)</option>
+        <option value="11">District 11 (San Diego)</option>
+      </select>
+      <svg class="select-arrow" width="12" height="8" viewBox="0 0 12 8"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>
+    </div>
+  </div>
+  <div class="control-group ml-auto">
+    <label class="ctrl-label">INCIDENT SIMULATION</label>
+    <button id="inject-btn" class="inject-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Inject Incident
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════ MAIN GRID ══ -->
+<main class="main-grid">
+
+  <!-- ─── LEFT COLUMN ─── -->
+  <div class="left-col">
+    <section class="panel forecast-panel">
+      <div class="panel-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        <span>ROUTE CONGESTION FORECAST (T+30)</span>
+      </div>
+      <div class="forecast-table">
+        <div class="ft-head">
+          <span>Route Name</span>
+          <span>Status</span>
+          <span>Predicted</span>
+          <span>Risk</span>
+          <span>Action</span>
+        </div>
+        <div id="forecast-rows">
+          <div class="forecast-row">
+            <span class="fr-name">US-101</span>
+            <span class="fr-status clear">Clear</span>
+            <span class="fr-pred low-cong">0.8%</span>
+            <span class="fr-risk low">Low</span>
+            <button class="fr-action maintain">Maintain</button>
+          </div>
+          <div class="forecast-row">
+            <span class="fr-name">I-880</span>
+            <span class="fr-status jam">Jam</span>
+            <span class="fr-pred high-cong">99.4%</span>
+            <span class="fr-risk critical">Critical</span>
+            <button class="fr-action reroute">Reroute</button>
+          </div>
+          <div class="forecast-row">
+            <span class="fr-name">I-280</span>
+            <span class="fr-status slow">Slow</span>
+            <span class="fr-pred mid-cong">38.9%</span>
+            <span class="fr-risk high">High</span>
+            <button class="fr-action prepare-reroute">Prepare</button>
+          </div>
+          <div class="forecast-row">
+            <span class="fr-name">I-580</span>
+            <span class="fr-status normal">Normal</span>
+            <span class="fr-pred normal-cong">1.4%</span>
+            <span class="fr-risk normal">Normal</span>
+            <button class="fr-action monitor">Monitor</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel kpi-panel">
+      <div class="panel-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>FLEET IMPACT &amp; KPI</span>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="1.5"><rect x="1" y="3" width="15" height="13"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          <div class="kpi-info">
+            <span class="kpi-label">Total Vehicles Rerouted</span>
+            <span class="kpi-val">12 <small>units</small></span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="1.5"><path d="M3 22V8.5a2 2 0 012-2h14a2 2 0 012 2V22"/><line x1="12" y1="22" x2="12" y2="6.5"/></svg>
+          <div class="kpi-info">
+            <span class="kpi-label">Fuel Saved</span>
+            <span class="kpi-val amber">14% <small>≈ 1.2L</small></span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="1.5"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2z"/><path d="M12 6v6l4 2"/></svg>
+          <div class="kpi-info">
+            <span class="kpi-label">CO₂ Reduction</span>
+            <span class="kpi-val green">≈ 3.2 kg</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div class="kpi-info">
+            <span class="kpi-label">Cost Saved</span>
+            <span class="kpi-val purple">≈ $2.45</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel dispatcher-panel">
+      <div class="dispatcher-btns">
+        <button id="approve-btn" class="btn-approve" onclick="alert('Reroute Approved!')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Approve Reroute
+        </button>
+        <button id="reject-btn" class="btn-reject" onclick="alert('Reroute Rejected!')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          Reject
+        </button>
+      </div>
+      <p class="dispatcher-note">Semi-automatic routing — Final decision is in your control.</p>
+    </section>
+  </div>
+
+  <!-- ─── CENTER COLUMN ─── -->
+  <div class="center-col">
+
+    <!-- Map -->
+    <section class="panel map-panel">
+      <div class="panel-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+        <span>TRAFFIC CONGESTION MAP (T+30)</span>
+        <span style="margin-left:auto;font-size:9px;color:var(--text-muted);">Live interactive map</span>
+      </div>
+      <div class="map-container">
+        <div id="traffic-map"></div>
+        <div class="map-legend">
+          <div class="legend-title">Congestion Probability</div>
+          <div class="legend-item"><span class="leg-dot green"></span>&lt; 10% (Free Flow)</div>
+          <div class="legend-item"><span class="leg-dot orange"></span>10% – 50% (Building)</div>
+          <div class="legend-item"><span class="leg-dot red"></span>&gt; 50% (Congested)</div>
+          <div class="legend-divider"></div>
+          <div class="legend-item"><span class="leg-circle"></span>Traffic Station</div>
+          <div class="legend-item"><span class="leg-line"></span>Route Segment</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Calibration Status -->
+    <section class="panel calibration-panel">
+      <div class="panel-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0112 2v2a8 8 0 015.66 2.34"/><path d="M4.93 4.93A10 10 0 002 12h2a8 8 0 012.34-5.66"/><path d="M4.93 19.07A10 10 0 0012 22v-2a8 8 0 01-5.66-2.34"/><path d="M19.07 19.07A10 10 0 0022 12h-2a8 8 0 01-2.34 5.66"/></svg>
+        <span>CALIBRATION STATUS</span>
+      </div>
+      <div class="calib-body">
+        <div class="calib-status-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          ACTIVATED (HOURLY)
+        </div>
+        <div class="calib-warn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>Calibration applied to District 4 only</span>
+        </div>
+      </div>
+      <div class="coeff-table-wrap">
+        <table class="coeff-table">
+          <thead><tr><th>Hour</th><td>00h</td><td>01h</td><td>02h</td><td>03h</td><td>04h</td><td>05h</td><td>06h</td><td>07h</td><td class="active-hour">08h</td><td>09h</td><td>10h</td><td>11h</td><td>12h</td><td>13h</td><td>14h</td><td>15h</td><td>16h</td><td>17h</td><td>18h</td><td>19h</td><td>20h</td><td>21h</td><td>22h</td><td>23h</td></tr></thead>
+          <tbody><tr><th>Coef</th><td>4.58</td><td>3.85</td><td>3.12</td><td>2.75</td><td>2.41</td><td>1.98</td><td>1.65</td><td>1.32</td><td class="active-hour">1.10</td><td>1.25</td><td>1.48</td><td>1.72</td><td>1.95</td><td>2.15</td><td>2.35</td><td>2.58</td><td>2.89</td><td>3.25</td><td>3.75</td><td>4.02</td><td>4.28</td><td>4.41</td><td>4.58</td><td>4.73</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ─── RIGHT COLUMN ─── -->
+  <div class="right-col">
+    <section class="panel router-panel">
+      <div class="panel-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8l4 4-4 4M8 12h8"/></svg>
+        <span>ROUTER DECISION ENGINE</span>
+      </div>
+      <div class="route-comparison">
+        <div class="route-card current">
+          <div class="rc-label">Current Route</div>
+          <div class="rc-name">I-880</div>
+          <div class="rc-eta-row"><span class="rc-eta-label">ETA</span><span class="rc-eta">29.8 min</span></div>
+          <div class="rc-cong-row"><span class="rc-cong-label">Congestion</span><span class="rc-cong red">99.4%</span></div>
+        </div>
+        <div class="vs-badge">VS</div>
+        <div class="route-card recommended">
+          <div class="rc-label">Recommended</div>
+          <div class="rc-name green">I-580</div>
+          <div class="rc-eta-row"><span class="rc-eta-label">ETA</span><span class="rc-eta green">6.7 min</span></div>
+          <div class="rc-cong-row"><span class="rc-cong-label">Congestion</span><span class="rc-cong green">1.4%</span></div>
+        </div>
+      </div>
+      <div class="router-metrics">
+        <div class="rm-card"><span class="rm-label">TIME SAVED</span><span class="rm-val">23.1 min</span></div>
+        <div class="rm-card"><span class="rm-label">CONFIDENCE</span><span class="rm-val green">99%</span></div>
+      </div>
+      <div class="justification-box">
+        <div class="just-label">ROUTER JUSTIFICATION</div>
+        <p class="just-text">Route changed due to estimated time gain exceeding the 3-minute threshold (Gain = 23.1 min). Hourly calibration applied.</p>
+      </div>
+    </section>
+
+    <section class="panel alerts-panel">
+      <div class="panel-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        <span>RECENT ALERTS</span>
+      </div>
+      <div id="alerts-list">
+        <div class="alert-row">
+          <span class="alert-time">07:58 AM</span>
+          <span class="alert-tag accident">ACCIDENT</span>
+          <div class="alert-content"><span class="alert-title">I-880 Accident</span><span class="alert-sub">Flow multiplier: ×3.5</span></div>
+        </div>
+        <div class="alert-row">
+          <span class="alert-time">07:45 AM</span>
+          <span class="alert-tag jam">JAM</span>
+          <div class="alert-content"><span class="alert-title">I-280 Slowdown</span><span class="alert-sub">Congestion building up</span></div>
+        </div>
+        <div class="alert-row">
+          <span class="alert-time">07:30 AM</span>
+          <span class="alert-tag clear">CLEAR</span>
+          <div class="alert-content"><span class="alert-title">I-580 Clear</span><span class="alert-sub">Normal traffic conditions</span></div>
+        </div>
+      </div>
+      <button class="view-all-btn">View All Scenarios →</button>
+    </section>
+  </div>
+</main>
+
+<!-- ═════════════════════════════════════════════════ FOOTER ══ -->
+<footer class="dash-footer">
+  <span class="footer-brand">PrediRoute System &copy; 2025</span>
+  <span>Data Source: Traffic Sensors (US)</span>
+  <div class="footer-conn">
+    <span class="status-dot green pulse small"></span>
+    Connected
+  </div>
+</footer>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  PREDiROUTE - COMPLETE MAP.JS
+//  Using CORRECT coordinates for all districts
+// ═══════════════════════════════════════════════════════════
+
+let map = null;
+let routeLayers = [];
+let incidentMarker = null;
+let currentDistrict = 4;
+
+const ROUTE_COORDS = {
+  4: {
+    // San Francisco Bay Area
+    // Bounding Box: North: 38.849907, South: 36.919370, East: -121.381198, West: -123.029949
+    center: [37.8846, -122.2056],
+    zoom: 9,
+    routes: [
+      {
+        id: 'zone-rouge',
+        name: 'US-101',
+        coords: [
+          [38.0815, -122.5480],
+          [38.0537, -122.5309],
+          [38.0376, -122.5367],
+          [38.0211, -122.5391],
+          [38.0069, -122.5412],
+          [37.9911, -122.5298],
+          [37.9784, -122.5208],
+          [37.9629, -122.5106],
+          [37.9496, -122.5119],
+          [37.9352, -122.5165],
+          [37.9211, -122.5119],
+          [37.9085, -122.5140],
+          [37.8886, -122.5166],
+          [37.8789, -122.5150],
+          [37.8610, -122.5030],
+          [37.8572, -122.4976],
+          [37.8420, -122.4856],
+          [37.8356, -122.4820]
+        ],
+        color: '#22c55e',
+        congestion: 0.8
+      },
+      {
+        id: 'ring-road',
+        name: 'I-880',
+        coords: [
+          [37.8118, -122.3034],
+          [37.8022, -122.2949],
+          [37.7942, -122.2647],
+          [37.7768, -122.2361],
+          [37.7714, -122.2231],
+          [37.7649, -122.2176],
+          [37.7567, -122.2104],
+          [37.7506, -122.2053],
+          [37.7418, -122.1973],
+          [37.7307, -122.1876],
+          [37.7196, -122.1771],
+          [37.7117, -122.1683],
+          [37.7039, -122.1568],
+          [37.6914, -122.1388],
+          [37.6875, -122.1332],
+          [37.6806, -122.1231],
+          [37.6774, -122.1189],
+          [37.6709, -122.1104],
+          [37.6647, -122.1068],
+          [37.6593, -122.1031],
+          [37.6548, -122.1003],
+          [37.6461, -122.0946]
+        ],
+        color: '#ef4444',
+        congestion: 99.4
+      },
+      {
+        id: 'dense-urban',
+        name: 'I-280',
+        coords: [
+          [37.7271, -122.4450],
+          [37.7197, -122.4483],
+          [37.7113, -122.4548],
+          [37.6981, -122.4713],
+          [37.6858, -122.4712],
+          [37.6758, -122.4702],
+          [37.6624, -122.4657],
+          [37.6497, -122.4520],
+          [37.6447, -122.4489],
+          [37.6384, -122.4410],
+          [37.6298, -122.4340],
+          [37.6208, -122.4260],
+          [37.6065, -122.4278],
+          [37.5918, -122.4148],
+          [37.5756, -122.4012],
+          [37.5568, -122.3800],
+          [37.5359, -122.3629],
+          [37.5203, -122.3542],
+          [37.5112, -122.3446],
+          [37.4987, -122.3160],
+          [37.4863, -122.2985],
+          [37.4703, -122.2937],
+          [37.4564, -122.2877],
+          [37.4383, -122.2465],
+          [37.4152, -122.2103],
+          [37.3948, -122.1770],
+          [37.3887, -122.1585],
+          [37.3737, -122.1450],
+          [37.3646, -122.1248],
+          [37.3549, -122.1121],
+          [37.3415, -122.0912],
+          [37.3337, -122.0766],
+          [37.3299, -122.0134],
+          [37.3179, -121.9773],
+          [37.3168, -121.9535],
+          [37.3175, -121.9375],
+          [37.3189, -121.9913],
+          [37.3194, -121.9932]
+        ],
+        color: '#f97316',
+        congestion: 38.9
+      },
+      {
+        id: 'highway',
+        name: 'I-580',
+        coords: [
+          [37.9271, -122.3742],
+          [37.9224, -122.3579],
+          [37.9215, -122.3404],
+          [37.9209, -122.3351],
+          [37.9175, -122.3293],
+          [37.9129, -122.3248],
+          [37.8999, -122.3141],
+          [37.8915, -122.3088],
+          [37.8869, -122.3082],
+          [37.8807, -122.3068],
+          [37.8249, -122.2709],
+          [37.8221, -122.2600],
+          [37.8163, -122.2518],
+          [37.8113, -122.2498],
+          [37.8051, -122.2349],
+          [37.8006, -122.2276],
+          [37.7982, -122.2170],
+          [37.7869, -122.1963],
+          [37.7806, -122.1730],
+          [37.7461, -122.1492],
+          [37.7334, -122.1396],
+          [37.7167, -121.7050],
+          [37.7100, -121.7211],
+          [37.7029, -121.7383],
+          [37.7027, -121.7555],
+          [37.7011, -121.8128],
+          [37.7009, -121.7973],
+          [37.7008, -121.7728],
+          [37.7012, -121.8694],
+          [37.7014, -121.8853],
+          [37.7015, -121.9048],
+          [37.7016, -121.9139],
+          [37.7017, -121.9211],
+          [37.7014, -121.8897],
+          [37.7011, -121.8466],
+          [37.7011, -121.8499],
+          [37.7010, -121.8380],
+          [37.7009, -121.8267],
+          [37.7008, -121.8187]
+        ],
+        color: '#22c55e',
+        congestion: 1.4
+      }
+    ],
+    stations: [
+      { station_id: '400000', freeway: '101', direction: 'S', lat: 38.081498, lng: -122.547963, type: 'ML', mile_marker: 459.835 },
+      { station_id: '400001', freeway: '101', direction: 'N', lat: 37.364085, lng: -121.901149, type: 'ML', mile_marker: 387.897 },
+      { station_id: '400002', freeway: '101', direction: 'S', lat: 37.584097, lng: -122.328465, type: 'ML', mile_marker: 416.893 },
+      { station_id: '400006', freeway: '880', direction: 'S', lat: 37.605003, lng: -122.065542, type: 'ML', mile_marker: 23.767 },
+      { station_id: '400007', freeway: '101', direction: 'N', lat: 37.586936, lng: -122.337721, type: 'ML', mile_marker: 417.437 },
+      { station_id: '400009', freeway: '80', direction: 'W', lat: 37.864883, lng: -122.303345, type: 'ML', mile_marker: 11.01 }
+    ]
+  },
+
+  7: {
+    // Los Angeles
+    // Bounding Box: North: 34.709779, South: 33.748821, East: -117.695126, West: -119.476139
+    center: [34.0522, -118.2437],
+    zoom: 10,
+    routes: [
+      {
+        id: 'north-corridor',
+        name: 'I-5 N',
+        coords: [
+          [34.7098, -118.7966],
+          [34.6950, -118.7800],
+          [34.6800, -118.7600],
+          [34.6650, -118.7400],
+          [34.6500, -118.7200],
+          [34.6350, -118.7000],
+          [34.6200, -118.6800]
+        ],
+        color: '#22c55e',
+        congestion: 2.1
+      },
+      {
+        id: 'central-ave',
+        name: 'I-110',
+        coords: [
+          [34.0406, -118.2737],
+          [34.0483, -118.2661],
+          [34.0554, -118.2568],
+          [34.0680, -118.2380],
+          [34.0745, -118.2331],
+          [34.0842, -118.2204],
+          [34.0929, -118.2062],
+          [34.1129, -118.1773],
+          [34.1192, -118.1620]
+        ],
+        color: '#f97316',
+        congestion: 44.2
+      },
+      {
+        id: 'east-bypass',
+        name: 'I-710',
+        coords: [
+          [33.8484, -118.2055],
+          [33.8611, -118.2004],
+          [33.8774, -118.1928],
+          [33.8875, -118.1896],
+          [33.9026, -118.1862],
+          [33.9050, -118.1844],
+          [33.9158, -118.1796],
+          [33.9244, -118.1780],
+          [33.9299, -118.1790],
+          [33.9495, -118.1703],
+          [33.9686, -118.1679],
+          [34.0004, -118.1750],
+          [34.0194, -118.1736],
+          [34.0228, -118.1730],
+          [34.0311, -118.1711],
+          [34.0344, -118.1701],
+          [34.0395, -118.1702]
+        ],
+        color: '#ef4444',
+        congestion: 71.5
+      },
+      {
+        id: 'outer-ring',
+        name: 'I-210',
+        coords: [
+          [34.3230, -118.4764],
+          [34.3152, -118.4384],
+          [34.3072, -118.4283],
+          [34.2975, -118.4177],
+          [34.2856, -118.4050],
+          [34.2744, -118.3780],
+          [34.2720, -118.3520],
+          [34.2608, -118.3310],
+          [34.2574, -118.3278],
+          [34.2343, -118.2870],
+          [34.2308, -118.2651],
+          [34.2214, -118.2457],
+          [34.2117, -118.2283],
+          [34.2059, -118.1982],
+          [34.1969, -118.1850],
+          [34.1892, -118.1808],
+          [34.1799, -118.1674],
+          [34.1748, -118.1604],
+          [34.1605, -118.1587],
+          [34.1517, -118.1425],
+          [34.1517, -118.1294],
+          [34.1523, -118.1178],
+          [34.1523, -118.1092],
+          [34.1514, -118.0910],
+          [34.1476, -118.0790],
+          [34.1485, -118.0687],
+          [34.1486, -118.0481],
+          [34.1468, -118.0291],
+          [34.1352, -117.9798],
+          [34.1345, -117.9589],
+          [34.1303, -117.9311],
+          [34.1251, -117.9151],
+          [34.1208, -117.8909],
+          [34.1208, -117.8884],
+          [34.1209, -117.8292],
+          [34.1221, -117.6951]
+        ],
+        color: '#22c55e',
+        congestion: 5.3
+      }
+    ],
+    stations: [
+      { station_id: '715898', freeway: '5', direction: 'N', lat: 33.880069, lng: -118.021261, type: 'ML', mile_marker: 117.313 },
+      { station_id: '715900', freeway: '5', direction: 'S', lat: 33.882892, lng: -118.026822, type: 'ML', mile_marker: 117.63 },
+      { station_id: '716028', freeway: '10', direction: 'E', lat: 34.055167, lng: -118.216535, type: 'ML', mile_marker: 16.759 }
+    ]
+  },
+
+  11: {
+    // San Diego
+    // Bounding Box: North: 33.406738, South: 32.544287, East: -116.852901, West: -117.591561
+    center: [32.7157, -117.1611],
+    zoom: 10,
+    routes: [
+      {
+        id: 'boulevard-sud',
+        name: 'I-5 S',
+        coords: [
+          [33.4067, -117.1645],
+          [33.3900, -117.1620],
+          [33.3700, -117.1590],
+          [33.3500, -117.1560],
+          [33.3300, -117.1540],
+          [33.3100, -117.1520],
+          [33.2900, -117.1500]
+        ],
+        color: '#22c55e',
+        congestion: 1.3
+      },
+      {
+        id: 'industrial-link',
+        name: 'I-805',
+        coords: [
+          [33.4067, -117.1645],
+          [33.4000, -117.1600],
+          [33.3900, -117.1550],
+          [33.3800, -117.1500],
+          [33.3700, -117.1450],
+          [33.3600, -117.1400],
+          [33.3500, -117.1350],
+          [33.3400, -117.1300],
+          [33.3300, -117.1250],
+          [33.3200, -117.1200],
+          [33.3100, -117.1150]
+        ],
+        color: '#f97316',
+        congestion: 29.7
+      },
+      {
+        id: 'tunnel-route',
+        name: 'I-5 N',
+        coords: [
+          [32.5443, -117.0327],
+          [32.5611, -117.0671],
+          [32.5771, -117.0829],
+          [32.5951, -117.0889],
+          [32.6138, -117.0912],
+          [32.6306, -117.0965],
+          [32.6403, -117.1002],
+          [32.6589, -117.1074],
+          [32.6717, -117.1110],
+          [32.6862, -117.1128],
+          [32.6943, -117.1248],
+          [32.6959, -117.1350],
+          [32.7062, -117.1477],
+          [32.7126, -117.1478],
+          [32.7179, -117.1476],
+          [32.7239, -117.1644],
+          [32.7256, -117.1664],
+          [32.7319, -117.1717],
+          [32.7354, -117.1748],
+          [32.7411, -117.1799],
+          [32.7433, -117.1840],
+          [32.7468, -117.1919],
+          [32.7495, -117.1955],
+          [32.7674, -117.2061],
+          [32.7793, -117.2083],
+          [32.7881, -117.2069],
+          [32.7915, -117.2072],
+          [32.7971, -117.2095],
+          [32.8006, -117.2118],
+          [32.8073, -117.2165],
+          [32.8136, -117.2211],
+          [32.8155, -117.2230],
+          [32.8349, -117.2333],
+          [32.8365, -117.2343],
+          [32.8425, -117.2366],
+          [32.8488, -117.2356],
+          [32.8551, -117.2313],
+          [32.8645, -117.2297],
+          [32.8697, -117.2295],
+          [32.8715, -117.2291],
+          [32.8726, -117.2293],
+          [32.8887, -117.2275],
+          [32.9119, -117.2285],
+          [32.9163, -117.2325],
+          [32.9188, -117.2354],
+          [32.9259, -117.2394],
+          [32.9282, -117.2403],
+          [32.9309, -117.2411],
+          [32.9322, -117.2410],
+          [32.9435, -117.2423],
+          [32.9501, -117.2436],
+          [32.9523, -117.2443],
+          [32.9623, -117.2463],
+          [32.9657, -117.2479],
+          [32.9690, -117.2488],
+          [32.9793, -117.2527],
+          [32.9799, -117.2532],
+          [32.9957, -117.2564],
+          [32.9959, -117.2567],
+          [33.0054, -117.2593],
+          [33.0106, -117.2652],
+          [33.0175, -117.2721],
+          [33.0263, -117.2749],
+          [33.0273, -117.2752],
+          [33.0356, -117.2808],
+          [33.0363, -117.2816],
+          [33.0372, -117.2819],
+          [33.0448, -117.2860],
+          [33.0481, -117.2870],
+          [33.0484, -117.2874],
+          [33.0555, -117.2894],
+          [33.0647, -117.2923],
+          [33.0734, -117.2946],
+          [33.0816, -117.2973],
+          [33.0861, -117.2990],
+          [33.0923, -117.3031],
+          [33.1035, -117.3106],
+          [33.1127, -117.3165],
+          [33.1159, -117.3181],
+          [33.1200, -117.3209],
+          [33.1230, -117.3227],
+          [33.1239, -117.3230],
+          [33.1343, -117.3295],
+          [33.1361, -117.3301],
+          [33.1428, -117.3332],
+          [33.1517, -117.3363],
+          [33.1554, -117.3381],
+          [33.1628, -117.3423],
+          [33.1677, -117.3444],
+          [33.1709, -117.3468],
+          [33.1734, -117.3483],
+          [33.1797, -117.3537],
+          [33.1913, -117.3633],
+          [33.2006, -117.3734],
+          [33.2037, -117.3812],
+          [33.2110, -117.3874],
+          [33.2186, -117.3911],
+          [33.2249, -117.3938],
+          [33.2302, -117.4009],
+          [33.2366, -117.4059],
+          [33.2402, -117.4134],
+          [33.2461, -117.4174],
+          [33.2581, -117.4263],
+          [33.2814, -117.4494],
+          [33.3039, -117.4706],
+          [33.3366, -117.5029],
+          [33.3630, -117.5405],
+          [33.3835, -117.5777],
+          [33.3935, -117.5916]
+        ],
+        color: '#ef4444',
+        congestion: 88.6
+      },
+      {
+        id: 'coastal-road',
+        name: 'I-5 S Coast',
+        coords: [
+          [33.3935, -117.5916],
+          [33.3800, -117.5850],
+          [33.3650, -117.5780],
+          [33.3500, -117.5710],
+          [33.3350, -117.5640],
+          [33.3200, -117.5570],
+          [33.3050, -117.5500],
+          [33.2900, -117.5430],
+          [33.2750, -117.5360],
+          [33.2600, -117.5290],
+          [33.2450, -117.5220],
+          [33.2300, -117.5150],
+          [33.2150, -117.5080],
+          [33.2000, -117.5010]
+        ],
+        color: '#22c55e',
+        congestion: 3.8
+      }
+    ],
+    stations: [
+      { station_id: '1100313', freeway: '5', direction: 'N', lat: 32.79154, lng: -117.20716, type: 'FR', mile_marker: 22.215 },
+      { station_id: '1100323', freeway: '5', direction: 'N', lat: 32.950106, lng: -117.243571, type: 'FR', mile_marker: 34.033 },
+      { station_id: '1100340', freeway: '5', direction: 'N', lat: 33.12394, lng: -117.32296, type: 'FR', mile_marker: 47.056 }
+    ]
+  }
+};
+
+function initMap(districtId = 4) {
+  const data = ROUTE_COORDS[districtId];
+  if (!data) {
+    console.error('District not found:', districtId);
+    return;
+  }
+
+  currentDistrict = districtId;
+
+  if (map) {
+    map.remove();
+    map = null;
+    routeLayers = [];
+    incidentMarker = null;
+  }
+
+  const container = document.getElementById('traffic-map');
+  if (!container) {
+    console.error('Map container not found');
+    return;
+  }
+
+  map = L.map('traffic-map', {
+    center: data.center,
+    zoom: data.zoom,
+    zoomControl: false
+  });
+
+  L.control.zoom({ position: 'topright' }).addTo(map);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19
+  }).addTo(map);
+
+  drawRoutes(data.routes);
+  drawStations(data.stations);
+
+  setTimeout(() => {
+    if (map) map.invalidateSize();
+  }, 500);
+
+  addDistrictLabel(districtId);
+  console.log('Map initialized for District', districtId);
+}
+
+function drawRoutes(routes) {
+  routeLayers.forEach(layer => {
+    if (map) map.removeLayer(layer);
+  });
+  routeLayers = [];
+
+  routes.forEach(route => {
+    let weight = 5;
+    let opacity = 0.9;
+    let dashArray = null;
+    
+    if (route.congestion > 70) {
+      weight = 7;
+      opacity = 1;
+    } else if (route.congestion > 40) {
+      weight = 6;
+      opacity = 0.95;
+    } else if (route.congestion < 10) {
+      weight = 4;
+      opacity = 0.8;
+      dashArray = '8,4';
+    }
+
+    const polyline = L.polyline(route.coords, {
+      color: route.color,
+      weight: weight,
+      opacity: opacity,
+      smoothFactor: 1,
+      dashArray: dashArray,
+      className: 'route-line'
+    }).addTo(map);
+
+    polyline.bindPopup(`
+      <strong style="color:${route.color};">${route.name}</strong><br>
+      Congestion: <strong>${route.congestion}%</strong><br>
+      ${route.congestion > 70 ? '⚠️ Heavy traffic' : 
+        route.congestion > 40 ? '⚠️ Moderate traffic' : 
+        '✅ Clear flow'}
+    `);
+
+    routeLayers.push(polyline);
+
+    if (route.congestion > 40) {
+      addTrafficDots(route.coords, route.color);
+    }
+  });
+}
+
+function addTrafficDots(coords, color) {
+  const interval = Math.max(1, Math.floor(coords.length / 4));
+  for (let i = 1; i < coords.length - 1; i += interval) {
+    const dot = L.circleMarker(coords[i], {
+      radius: 4,
+      color: color,
+      fillColor: color,
+      fillOpacity: 0.9,
+      weight: 1,
+      className: 'traffic-dot'
+    }).addTo(map);
+
+    const el = dot.getElement();
+    if (el) {
+      el.style.animation = 'traffic-flow 1.5s ease-in-out infinite';
+      el.style.animationDelay = `${i * 0.3}s`;
+    }
+    routeLayers.push(dot);
+  }
+}
+
+function drawStations(stations) {
+  stations.forEach(station => {
+    let color = '#60a5fa';
+    if (station.type === 'FR') color = '#f59e0b';
+    else if (station.type === 'OR') color = '#a78bfa';
+
+    const marker = L.circleMarker([station.lat, station.lng], {
+      radius: 6,
+      color: '#ffffff',
+      weight: 2,
+      fillColor: color,
+      fillOpacity: 1,
+      className: 'station-marker'
+    }).addTo(map);
+
+    marker.bindPopup(`
+      <strong>Station ${station.station_id}</strong><br>
+      Freeway: ${station.freeway} ${station.direction}<br>
+      Type: ${station.type}<br>
+      Mile Marker: ${station.mile_marker}
+    `);
+
+    routeLayers.push(marker);
+  });
+}
+
+function addDistrictLabel(districtId) {
+  const names = {
+    4: 'District 4 (San Francisco - Calibrated)',
+    7: 'District 7 (Los Angeles)',
+    11: 'District 11 (San Diego)'
+  };
+
+  const label = L.control({ position: 'topleft' });
+  label.onAdd = function() {
+    const div = L.DomUtil.create('div', 'district-label');
+    div.innerHTML = `
+      <div style="background: rgba(22,30,42,0.92); padding: 8px 14px; border-radius: 8px; border: 1px solid #1f2d42; color: #e2e8f0; font-size: 12px; font-weight: 600; font-family: Inter, sans-serif; backdrop-filter: blur(4px); box-shadow: 0 2px 12px rgba(0,0,0,0.4);">
+        📍 ${names[districtId] || 'District'}
+        <span style="font-weight:400;font-size:10px;color:#4b6280;margin-left:8px;">${districtId === 4 ? '🟢 Calibrated' : '⚪ Uncalibrated'}</span>
+      </div>
+    `;
+    return div;
+  };
+  label.addTo(map);
+}
+
+function updateMapDistrict(districtId) {
+  initMap(districtId);
+}
+
+window.initMap = initMap;
+window.updateMapDistrict = updateMapDistrict;
+window.currentDistrict = currentDistrict;
+
+// ── Auto-initialize ──
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof L !== 'undefined') {
+    const container = document.getElementById('traffic-map');
+    if (container) {
+      console.log('Initializing map for District 4 (San Francisco Bay Area)...');
+      initMap(4);
+    } else {
+      console.error('Container not found');
+    }
+  } else {
+    console.error('Leaflet not loaded');
+  }
+});
+
+// ── District Selector ──
+document.getElementById('district-select').addEventListener('change', function(e) {
+  const id = parseInt(e.target.value);
+  updateMapDistrict(id);
+});
+
+// ── Clock ──
+function updateClock() {
+  const now = new Date();
+  const h12 = String(now.getHours() % 12 || 12).padStart(2, '0');
+  const mins = String(now.getMinutes()).padStart(2, '0');
+  const secs = String(now.getSeconds()).padStart(2, '0');
+  const ampm = now.getHours() >= 12 ? 'PM' : 'AM';
+  document.getElementById('live-clock').textContent = `${h12}:${mins}:${secs} ${ampm}`;
+  document.getElementById('live-date').textContent = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+updateClock();
+setInterval(updateClock, 1000);
+</script>
+</body>
+</html>
